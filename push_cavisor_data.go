@@ -10,18 +10,47 @@ import (
 	"io/ioutil"
 	"net/http"
 	"os"
-	"strconv"
 	"strings"
 	"time"
+    "gopkg.in/yaml.v2"
+    "log"
+    "flag"
 )
 
 var (
 	CPUNum   int64
 	countNum int
+    config Config
 )
 
+type Config struct {
+    OpenFalconPort int `yaml:"agent_point"`
+    CadvisorPort int
+    DockerSocket string
+    Interval int
+
+}
+
+func (config *Config) LoadConfig(configFile string) (err error) {
+    if _, err := os.Stat(configFile); err != nil {
+        return err
+    }
+    data, err := ioutil.ReadFile(configFile)
+    if err != nil {
+        log.Fatalf("load config file failed. %v", err)
+        return err
+    }
+    err = yaml.Unmarshal([]byte(data), &config)
+    if err != nil {
+        log.Fatalf("load config failed. %v", err)
+        return err
+    }
+    return err
+}
+
 func getCadvisorData() ([]info.ContainerInfo, error) {
-	client, err := client.NewClient("http://127.0.0.1:18080/")
+    url := fmt.Sprintf("http://127.0.0.1:%d/", config.CadvisorPort)
+	client, err := client.NewClient(url)
 	if err != nil {
 		return nil, err
 	}
@@ -36,7 +65,7 @@ func getCadvisorData() ([]info.ContainerInfo, error) {
 
 func getDockerContainerInfo(containerId string) (ContainerInfo docker_types.ContainerJSON, err error) {
 	defaultHeaders := map[string]string{"User-Agent": "engine-api-cli-1.0"}
-	client, err := docker.NewClient("unix:///var/run/docker.sock", "v1.24", nil, defaultHeaders)
+	client, err := docker.NewClient(config.DockerSocket, "v1.24", nil, defaultHeaders)
 	if err != nil {
 		return
 	}
@@ -117,7 +146,7 @@ func getTag() string {
 func getUsageData(cadvisorData info.ContainerInfo) (ausge, busge *info.ContainerStats) {
 	stats := cadvisorData.Stats
 	ausge = stats[0]
-	if len(stats) < 10 {
+	if len(stats) < 11 {
 		busge = stats[1]
 		countNum = 1
 	} else {
@@ -191,7 +220,7 @@ func pushIt(value, timestamp, metric, tags, containerId, counterType,
 	postThing := `[{"metric": "` + metric + `", "endpoint": "docker-` +
 		endpoint + `", "timestamp": ` + timestamp + `,"step": ` + "60" + `,"value": ` + value + `,"counterType": "` + counterType + `","tags": "` + tags + `"}]`
 	//push data to falcon-agent
-	url := "http://127.0.0.1:1988/v1/push"
+	url := fmt.Sprintf("http://127.0.0.1:%d/v1/push", config.OpenFalconPort)
 	resp, err := http.Post(url,
 		"application/x-www-form-urlencoded",
 		strings.NewReader(postThing))
@@ -328,12 +357,18 @@ func pushNetwork(networkUsage1, networkUsage2 info.NetworkStats, timestamp, tags
 }
 
 func main() {
-	tmp := os.Getenv("CADVISOR_INTERVAL")
-	Interval := 60 * time.Second
-	tmp1, err := strconv.ParseInt(tmp, 10, 64)
-	if err == nil {
-		Interval = time.Duration(tmp1) * time.Second
-	}
+    configFile := flag.String("config_file", "cadvisor_collector_config.yaml", " config file path")
+    flag.Parse()
+
+    config = Config{
+        Interval: 60,
+        OpenFalconPort: 1988,
+        CadvisorPort: 18080,
+        DockerSocket: "unix:///var/run/docker.sock",
+    }
+    config.LoadConfig(*configFile)
+
+    Interval := time.Duration(config.Interval) * time.Second
 	t := time.NewTicker(Interval)
 	fmt.Println("start push_cavisor_data ok", Interval)
 	for {
