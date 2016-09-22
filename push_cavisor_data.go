@@ -1,55 +1,54 @@
 package main
 
 import (
+	"flag"
 	"fmt"
 	docker_types "github.com/docker/docker/api/types"
 	docker "github.com/docker/docker/client"
 	"github.com/google/cadvisor/client"
 	info "github.com/google/cadvisor/info/v1"
 	"golang.org/x/net/context"
+	"gopkg.in/yaml.v2"
 	"io/ioutil"
+	"log"
 	"net/http"
 	"os"
 	"strings"
 	"time"
-    "gopkg.in/yaml.v2"
-    "log"
-    "flag"
 )
 
 var (
 	CPUNum   int64
 	countNum int
-    config Config
+	config   Config
 )
 
 type Config struct {
-    OpenFalconPort int `yaml:"agent_point"`
-    CadvisorPort int
-    DockerSocket string
-    Interval int
-
+	OpenFalconPort int `yaml:"agent_point"`
+	CadvisorPort   int
+	DockerSocket   string
+	Interval       int
 }
 
 func (config *Config) LoadConfig(configFile string) (err error) {
-    if _, err := os.Stat(configFile); err != nil {
-        return err
-    }
-    data, err := ioutil.ReadFile(configFile)
-    if err != nil {
-        log.Fatalf("load config file failed. %v", err)
-        return err
-    }
-    err = yaml.Unmarshal([]byte(data), &config)
-    if err != nil {
-        log.Fatalf("load config failed. %v", err)
-        return err
-    }
-    return err
+	if _, err := os.Stat(configFile); os.IsNotExist(err) {
+		return err
+	}
+	data, err := ioutil.ReadFile(configFile)
+	if err != nil {
+		log.Fatalf("load config file failed. %v", err)
+		return err
+	}
+	err = yaml.Unmarshal([]byte(data), &config)
+	if err != nil {
+		log.Fatalf("load config failed. %v", err)
+		return err
+	}
+	return err
 }
 
 func getCadvisorData() ([]info.ContainerInfo, error) {
-    url := fmt.Sprintf("http://127.0.0.1:%d/", config.CadvisorPort)
+	url := fmt.Sprintf("http://127.0.0.1:%d/", config.CadvisorPort)
 	client, err := client.NewClient(url)
 	if err != nil {
 		return nil, err
@@ -357,18 +356,18 @@ func pushNetwork(networkUsage1, networkUsage2 info.NetworkStats, timestamp, tags
 }
 
 func main() {
-    configFile := flag.String("config_file", "cadvisor_collector_config.yaml", " config file path")
-    flag.Parse()
+	configFile := flag.String("config_file", "cadvisor_collector_config.yaml", " config file path")
+	flag.Parse()
 
-    config = Config{
-        Interval: 60,
-        OpenFalconPort: 1988,
-        CadvisorPort: 18080,
-        DockerSocket: "unix:///var/run/docker.sock",
-    }
-    config.LoadConfig(*configFile)
+	config = Config{
+		Interval:       60,
+		OpenFalconPort: 1988,
+		CadvisorPort:   18080,
+		DockerSocket:   "unix:///var/run/docker.sock",
+	}
+	config.LoadConfig(*configFile)
 
-    Interval := time.Duration(config.Interval) * time.Second
+	Interval := time.Duration(config.Interval) * time.Second
 	t := time.NewTicker(Interval)
 	fmt.Println("start push_cavisor_data ok", Interval)
 	for {
