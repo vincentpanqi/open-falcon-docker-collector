@@ -28,6 +28,7 @@ type Config struct {
 	CadvisorPort   int
 	DockerSocket   string
 	Interval       int
+    DockerNotCountLabel string
 }
 
 func (config *Config) LoadConfig(configFile string) (err error) {
@@ -77,7 +78,6 @@ func getDockerContainerInfo(containerId string) (ContainerInfo docker_types.Cont
 
 func pushData() {
 	cadvisorDatas, err := getCadvisorData()
-	fmt.Println("test")
 	if err != nil {
 		fmt.Println(err)
 		return
@@ -85,6 +85,7 @@ func pushData() {
 	t := time.Now().Unix()
 	timestamp := fmt.Sprintf("%d", t)
 
+	containerNum := 0
 	for _, cadvisorData := range cadvisorDatas {
 		memLimit := cadvisorData.Spec.Memory.Limit
 		containerId := cadvisorData.Id
@@ -128,6 +129,16 @@ func pushData() {
 			fmt.Println(err)
 		}
 
+		// container num
+		containerLabels := cadvisorData.Labels
+		if _, ok := containerLabels[config.DockerNotCountLabel]; ok {
+			containerNum += 1
+		}
+
+	}
+
+	if err := pushContainerNum(containerNum, timestamp); err != nil {
+		fmt.Println(err)
 	}
 }
 
@@ -300,6 +311,43 @@ func pushMem(memLimit uint64, memoryStats info.MemoryStats, timestamp, tags,
 	return nil
 }
 
+func pushContainerNum(num int, timestamp string) (err error) {
+	fmt.Println("push containers num")
+
+	endpoint := os.Getenv("HOSTNAME")
+	if len(endpoint) == 0 {
+		endpoint, err = os.Hostname()
+		if err != nil {
+			return err
+		}
+	}
+
+	if len(endpoint) == 0 {
+		return err
+	}
+
+	value := fmt.Sprintf("%d", num)
+	counterType := "GAUGE"
+	metric := "container.num"
+	tags := ""
+	postThing := `[{"metric": "` + metric + `", "endpoint": "node-` +
+		endpoint + `", "timestamp": ` + timestamp + `,"step": ` + "60" + `,"value": ` + value + `,"counterType": "` + counterType + `","tags": "` + tags + `"}]`
+	//push data to falcon-agent
+	url := fmt.Sprintf("http://127.0.0.1:%d/v1/push", config.OpenFalconPort)
+	resp, err := http.Post(url,
+		"application/x-www-form-urlencoded",
+		strings.NewReader(postThing))
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	_, err1 := ioutil.ReadAll(resp.Body)
+	if err1 != nil {
+		return err1
+	}
+	return nil
+}
+
 func pushNetwork(networkUsage1, networkUsage2 info.NetworkStats, timestamp, tags,
 	containerId,
 	endpoint string) error {
@@ -364,6 +412,7 @@ func main() {
 		OpenFalconPort: 1988,
 		CadvisorPort:   18080,
 		DockerSocket:   "unix:///var/run/docker.sock",
+        DockerNotCountLabel: "dcos-container",
 	}
 	config.LoadConfig(*configFile)
 
