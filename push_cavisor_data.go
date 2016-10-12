@@ -24,11 +24,12 @@ var (
 )
 
 type Config struct {
-	OpenFalconPort int `yaml:"agent_point"`
-	CadvisorPort   int
-	DockerSocket   string
-	Interval       int
-    DockerNotCountLabel string
+	OpenFalconPort      int `yaml:"agent_point"`
+	CadvisorPort        int
+	CadvisorHost        string
+	DockerSocket        string
+	Interval            int
+	DockerNotCountLabel string
 }
 
 func (config *Config) LoadConfig(configFile string) (err error) {
@@ -49,13 +50,13 @@ func (config *Config) LoadConfig(configFile string) (err error) {
 }
 
 func getCadvisorData() ([]info.ContainerInfo, error) {
-	url := fmt.Sprintf("http://127.0.0.1:%d/", config.CadvisorPort)
+	url := fmt.Sprintf("http://%s:%d/", config.CadvisorHost, config.CadvisorPort)
 	client, err := client.NewClient(url)
 	if err != nil {
 		return nil, err
 	}
 	request := info.ContainerInfoRequest{NumStats: -1}
-	cadvisorData, err := client.AllDockerContainers(&request)
+	cadvisorData, err := client.SubcontainersInfo("/docker", &request)
 	if err != nil {
 		return nil, err
 	}
@@ -408,11 +409,12 @@ func main() {
 	flag.Parse()
 
 	config = Config{
-		Interval:       60,
-		OpenFalconPort: 1988,
-		CadvisorPort:   18080,
-		DockerSocket:   "unix:///var/run/docker.sock",
-        DockerNotCountLabel: "dcos-container",
+		Interval:            60,
+		OpenFalconPort:      1988,
+		CadvisorPort:        18080,
+		CadvisorHost:        "127.0.0.1",
+		DockerSocket:        "unix:///var/run/docker.sock",
+		DockerNotCountLabel: "dcos-container",
 	}
 	config.LoadConfig(*configFile)
 
