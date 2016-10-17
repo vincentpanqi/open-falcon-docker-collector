@@ -93,7 +93,7 @@ func pushData() {
 
 		dockerData, err := getDockerContainerInfo(containerId)
 		if err != nil {
-			fmt.Println(err)
+			fmt.Println("get container info failed. ", err)
 			continue
 		}
 		endpoint := containerId
@@ -106,20 +106,20 @@ func pushData() {
 		CPUUsage1 := aUsage.Cpu
 		CPUUsage2 := bUsage.Cpu
 		if err := pushCPU(CPUUsage1, CPUUsage2, timestamp, tag, containerId, endpoint); err != nil { //get cadvisor data about CPU
-			fmt.Println(err)
+			fmt.Println("push cput info failed.", err)
 		}
 
 		// disk io usage
 		diskIoUsage := aUsage.DiskIo
 		if err := pushDiskIO(diskIoUsage, timestamp, tag,
 			containerId, endpoint); err != nil {
-			fmt.Println(err)
+			fmt.Println("push disk io failed.", err)
 		}
 
 		// memoryuage
 		memoryUsage := aUsage.Memory
 		if err := pushMem(memLimit, memoryUsage, timestamp, tag, containerId, endpoint); err != nil { //get cadvisor data about Memery
-			fmt.Println(err)
+			fmt.Println("push mem failed.", err)
 		}
 
 		// network
@@ -127,7 +127,7 @@ func pushData() {
 		networkUsage2 := bUsage.Network
 
 		if err := pushNetwork(networkUsage1, networkUsage2, timestamp, tag, containerId, endpoint); err != nil { //get cadvisor data about Memery
-			fmt.Println(err)
+			fmt.Println("push net failed.", err)
 		}
 
 		// container num
@@ -139,7 +139,7 @@ func pushData() {
 	}
 
 	if err := pushContainerNum(containerNum, timestamp); err != nil {
-		fmt.Println(err)
+		fmt.Println("push container num failed.", err)
 	}
 }
 
@@ -229,7 +229,7 @@ func pushIt(value, timestamp, metric, tags, containerId, counterType,
 	endpoint string) error {
 
 	postThing := `[{"metric": "` + metric + `", "endpoint": "docker-` +
-		endpoint + `", "timestamp": ` + timestamp + `,"step": ` + "60" + `,"value": ` + value + `,"counterType": "` + counterType + `","tags": "` + tags + `"}]`
+		endpoint + `", "timestamp": ` + timestamp + `,"step": ` + fmt.Sprintf("%d", config.Interval) + `,"value": ` + value + `,"counterType": "` + counterType + `","tags": "` + tags + `"}]`
 	//push data to falcon-agent
 	url := fmt.Sprintf("http://127.0.0.1:%d/v1/push", config.OpenFalconPort)
 	resp, err := http.Post(url,
@@ -409,7 +409,7 @@ func main() {
 	flag.Parse()
 
 	config = Config{
-		Interval:            60,
+		Interval:            10,
 		OpenFalconPort:      1988,
 		CadvisorPort:        18080,
 		CadvisorHost:        "127.0.0.1",
