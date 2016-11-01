@@ -7,19 +7,19 @@ import (
 	docker "github.com/docker/docker/client"
 	"github.com/google/cadvisor/client"
 	info "github.com/google/cadvisor/info/v1"
-	"github.com/leenanxi/nasync"
 	"golang.org/x/net/context"
 	"gopkg.in/yaml.v2"
 	"io/ioutil"
 	"log"
 	"net/http"
 	"os"
+	"runtime"
 	"strings"
 	"time"
 )
 
 var (
-	CPUNum   int64
+	// CPUNum   int64
 	countNum int
 	config   Config
 )
@@ -80,8 +80,8 @@ func getDockerContainerInfo(containerId string) (ContainerInfo docker_types.Cont
 
 func pushData() {
 	//new a async pool in max 1000 task in max 1000 gorutines
-	async := nasync.New(1000, 1000)
-	defer async.Close()
+	// async := nasync.New(1000, 1000)
+	// defer async.Close()
 	cadvisorDatas, err := getCadvisorData()
 	if err != nil {
 		fmt.Println(err)
@@ -92,72 +92,76 @@ func pushData() {
 
 	containerNum := 0
 	for _, cadvisorData := range cadvisorDatas {
-		async.Do(func() {
-			memLimit := cadvisorData.Spec.Memory.Limit
-			containerId := cadvisorData.Id
+		memLimit := cadvisorData.Spec.Memory.Limit
+		containerId := cadvisorData.Id
+		if len(containerId) == 0 {
+			continue
+		}
+		fmt.Println(containerId, "start")
 
-			dockerData, err := getDockerContainerInfo(containerId)
-			if err != nil {
-				fmt.Println("get container info failed. ", err)
-				return
-			}
-			endpoint := containerId
+		dockerData, err := getDockerContainerInfo(containerId)
+		if err != nil {
+			fmt.Println(containerId, "get container info failed. ", err)
+			return
+		}
+		endpoint := containerId
 
-			getCPUNum(dockerData)
-			tag := getTag()
+		CPUNum := getCPUNum(dockerData)
+		tag := getTag()
 
-			aUsage, bUsage := getUsageData(cadvisorData)
+		aUsage, bUsage := getUsageData(cadvisorData)
 
-			CPUUsage1 := aUsage.Cpu
-			CPUUsage2 := bUsage.Cpu
-			if err := pushCPU(CPUUsage1, CPUUsage2, timestamp, tag, containerId, endpoint); err != nil { //get cadvisor data about CPU
-				fmt.Println("push cpu info failed.", err)
-			}
-			fmt.Println("push cpu info finished.")
+		CPUUsage1 := aUsage.Cpu
+		CPUUsage2 := bUsage.Cpu
+		if err := pushCPU(CPUUsage1, CPUUsage2, timestamp, tag, containerId, endpoint, CPUNum); err != nil { //get cadvisor data about CPU
+			fmt.Println(containerId, "push cpu info failed.", err)
+		}
+		fmt.Println(containerId, "push cpu info finished.")
 
-			// disk io usage
-			diskIoUsage := aUsage.DiskIo
-			if err := pushDiskIO(diskIoUsage, timestamp, tag,
-				containerId, endpoint); err != nil {
-				fmt.Println("push disk io failed.", err)
-			}
-			fmt.Println("push disk info finished.")
+		// disk io usage
+		diskIoUsage := aUsage.DiskIo
+		if err := pushDiskIO(diskIoUsage, timestamp, tag,
+			containerId, endpoint); err != nil {
+			fmt.Println(containerId, "push disk io failed.", err)
+		}
+		fmt.Println(containerId, "push disk info finished.")
 
-			// memoryuage
-			memoryUsage := aUsage.Memory
-			if err := pushMem(memLimit, memoryUsage, timestamp, tag, containerId, endpoint); err != nil { //get cadvisor data about Memery
-				fmt.Println("push mem failed.", err)
-			}
-			fmt.Println("push mem info finished.")
+		// memoryuage
+		memoryUsage := aUsage.Memory
+		if err := pushMem(memLimit, memoryUsage, timestamp, tag, containerId, endpoint); err != nil { //get cadvisor data about Memery
+			fmt.Println(containerId, "push mem failed.", err)
+		}
+		fmt.Println(containerId, "push mem info finished.")
 
-			// network
-			networkUsage1 := aUsage.Network
-			networkUsage2 := bUsage.Network
-			if err := pushNetwork(networkUsage1, networkUsage2, timestamp, tag, containerId, endpoint); err != nil { //get cadvisor data about Memery
-				fmt.Println("push net failed.", err)
-			}
-			fmt.Println("push net info finished.")
-
-		})
+		// network
+		networkUsage1 := aUsage.Network
+		networkUsage2 := bUsage.Network
+		if err := pushNetwork(networkUsage1, networkUsage2, timestamp, tag, containerId, endpoint); err != nil { //get cadvisor data about Memery
+			fmt.Println(containerId, "push net failed.", err)
+		}
+		fmt.Println(containerId, "push net info finished.")
 
 		// container num
 		containerLabels := cadvisorData.Labels
 		if _, ok := containerLabels[config.DockerNotCountLabel]; ok {
 			containerNum += 1
 		}
+		fmt.Println(containerId, "end")
 	}
 
 	if err := pushContainerNum(containerNum, timestamp); err != nil {
 		fmt.Println("push container num failed.", err)
 	}
-	fmt.Println("push container num done.", containerNum)
+	// fmt.Println("push container num done.", containerNum)
 }
 
-func getCPUNum(dockerData docker_types.ContainerJSON) {
-	CPUNum = dockerData.HostConfig.CPUCount
+func getCPUNum(dockerData docker_types.ContainerJSON) (CPUNum int64) {
+	// CPUNum = dockerData.HostConfig.CPUCount
+	CPUNum = int64(runtime.NumCPU())
 	if CPUNum == 0 {
 		CPUNum = 1
 	}
+	return CPUNum
 }
 
 func getTag() string {
@@ -178,9 +182,9 @@ func getUsageData(cadvisorData info.ContainerInfo) (ausge, busge *info.Container
 }
 
 func pushCPU(CPUUsage1, CPUUsage2 info.CpuStats, timestamp, tags,
-	containerId, endpoint string) (err error) {
+	containerId, endpoint string, CPUNum int64) (err error) {
 
-	fmt.Println("push CPU")
+	// fmt.Println(containerId, "push CPU")
 	if err = pushCount("cpu.busy",
 		CPUUsage1.Usage.Total,
 		CPUUsage2.Usage.Total,
@@ -258,7 +262,7 @@ func pushIt(value, timestamp, metric, tags, containerId, counterType,
 
 func pushDiskIO(diskIOStats info.DiskIoStats, timestamp, tags, containerId,
 	endpoint string) error {
-	fmt.Println("push Disk IO")
+	// fmt.Println("push Disk IO")
 	if len(diskIOStats.IoServiceBytes) == 0 {
 		if err := pushIt("0", timestamp, "disk.io"+
 			".read_bytes",
@@ -294,7 +298,7 @@ func pushDiskIO(diskIOStats info.DiskIoStats, timestamp, tags, containerId,
 
 func pushMem(memLimit uint64, memoryStats info.MemoryStats, timestamp, tags,
 	containerId, endpoint string) error {
-	fmt.Println("push Mem")
+	// fmt.Println("push Mem")
 	memUsageNum := memoryStats.Usage
 
 	memUsage := float64(memUsageNum) / float64(memLimit)
@@ -323,7 +327,7 @@ func pushMem(memLimit uint64, memoryStats info.MemoryStats, timestamp, tags,
 }
 
 func pushContainerNum(num int, timestamp string) (err error) {
-	fmt.Println("push containers num")
+	fmt.Println("push containers num", num)
 
 	endpoint := os.Getenv("HOSTNAME")
 	if len(endpoint) == 0 {
@@ -362,7 +366,7 @@ func pushContainerNum(num int, timestamp string) (err error) {
 func pushNetwork(networkUsage1, networkUsage2 info.NetworkStats, timestamp, tags,
 	containerId,
 	endpoint string) error {
-	fmt.Println("push Network")
+	// fmt.Println(containerId, "push Network")
 	if err := pushCount("net.if.in.bytes", networkUsage1.RxBytes,
 		networkUsage2.RxBytes, timestamp, tags, containerId,
 		endpoint, 1); err != nil {
