@@ -101,9 +101,9 @@ func pushData() {
 		if len(containerId) == 0 {
 			continue
 		}
-		fmt.Println(containerId, "start")
 
 		dockerData, err := getDockerContainerInfo(containerId)
+		fmt.Println(containerId, "get container info")
 		if err != nil {
 			fmt.Println(containerId, "get container info failed. ", err)
 			return
@@ -147,7 +147,8 @@ func pushData() {
 
 		// container num
 		containerLabels := cadvisorData.Labels
-		if _, ok := containerLabels[config.DockerNotCountLabel]; ok {
+		fmt.Println(containerId, "container labels", containerLabels)
+		if _, ok := containerLabels[config.DockerNotCountLabel]; !ok {
 			containerNum += 1
 		}
 		fmt.Println(containerId, "end")
