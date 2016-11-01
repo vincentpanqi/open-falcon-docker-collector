@@ -350,7 +350,7 @@ func pushContainerNum(num int, timestamp string) (err error) {
 	counterType := "GAUGE"
 	metric := "container.num"
 	tags := ""
-	postThing := `[{"metric": "` + metric + `", "endpoint": "node-` +
+	postThing := `[{"metric": "` + metric + `", "endpoint": "` +
 		endpoint + `", "timestamp": ` + timestamp + `,"step": ` + fmt.Sprintf("%d", config.Interval) + `,"value": ` + value + `,"counterType": "` + counterType + `","tags": "` + tags + `"}]`
 	//push data to falcon-agent
 	url := fmt.Sprintf("http://127.0.0.1:%d/v1/push", config.OpenFalconPort)
