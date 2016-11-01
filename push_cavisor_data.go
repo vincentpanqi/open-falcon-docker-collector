@@ -20,8 +20,9 @@ import (
 
 var (
 	// CPUNum   int64
-	countNum int
-	config   Config
+	countNum     int
+	config       Config
+	dockerClient *docker.Client
 )
 
 type Config struct {
@@ -67,11 +68,14 @@ func getCadvisorData() ([]info.ContainerInfo, error) {
 
 func getDockerContainerInfo(containerId string) (ContainerInfo docker_types.ContainerJSON, err error) {
 	defaultHeaders := map[string]string{"User-Agent": "engine-api-cli-1.0"}
-	client, err := docker.NewClient(config.DockerSocket, "v1.24", nil, defaultHeaders)
-	if err != nil {
-		return
+	// client, err := docker.NewClient(config.DockerSocket, "v1.24", nil, defaultHeaders)
+	if dockerClient == nil {
+		dockerClient, err = docker.NewClient(config.DockerSocket, "v1.24", nil, defaultHeaders)
+		if err != nil {
+			return ContainerInfo, err
+		}
 	}
-	ContainerInfo, err = client.ContainerInspect(context.Background(), containerId)
+	ContainerInfo, err = dockerClient.ContainerInspect(context.Background(), containerId)
 	if err != nil {
 		return
 	}
