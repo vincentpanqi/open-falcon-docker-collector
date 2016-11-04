@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"flag"
 	"fmt"
 	docker_types "github.com/docker/docker/api/types"
@@ -106,14 +107,17 @@ func pushData() {
 		fmt.Println(containerId, "get container info")
 		if err != nil {
 			fmt.Println(containerId, "get container info failed. ", err)
-			return
+			continue
 		}
 		endpoint := containerId
 
 		CPUNum := getCPUNum(dockerData)
 		tag := getTag()
 
-		aUsage, bUsage := getUsageData(cadvisorData)
+		aUsage, bUsage, err := getUsageData(cadvisorData)
+		if err != nil {
+			continue
+		}
 
 		CPUUsage1 := aUsage.Cpu
 		CPUUsage2 := bUsage.Cpu
@@ -173,8 +177,13 @@ func getTag() string {
 	return ""
 }
 
-func getUsageData(cadvisorData info.ContainerInfo) (ausge, busge *info.ContainerStats) {
+func getUsageData(cadvisorData info.ContainerInfo) (ausge, busge *info.ContainerStats, err error) {
 	stats := cadvisorData.Stats
+	if len(stats) == 0 {
+		fmt.Println("error: ", cadvisorData)
+		err = errors.New("error")
+		return
+	}
 	ausge = stats[0]
 	if len(stats) < 11 {
 		busge = stats[1]
