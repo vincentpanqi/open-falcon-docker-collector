@@ -84,9 +84,6 @@ func getDockerContainerInfo(containerId string) (ContainerInfo docker_types.Cont
 }
 
 func pushData() {
-	//new a async pool in max 1000 task in max 1000 gorutines
-	// async := nasync.New(1000, 1000)
-	// defer async.Close()
 	cadvisorDatas, err := getCadvisorData()
 	if err != nil {
 		fmt.Println(err)
@@ -102,8 +99,15 @@ func pushData() {
 		if len(containerId) == 0 {
 			continue
 		}
-
+		containerLabels := cadvisorData.Labels
+		var marathonId string
+		marathonId = containerLabels["dcos-marathon-id"]
+		if len(marathonId) == 0 {
+			continue
+		}
+		fmt.Println("marathon id", marathonId)
 		dockerData, err := getDockerContainerInfo(containerId)
+
 		fmt.Println(containerId, "get container info")
 		if err != nil {
 			fmt.Println(containerId, "get container info failed. ", err)
@@ -113,6 +117,11 @@ func pushData() {
 
 		CPUNum := getCPUNum(dockerData)
 		tag := getTag()
+		if len(tag) == 0 {
+			tag = "marathon_id=" + marathonId
+		} else {
+			tag = ",marathon_id=" + marathonId
+		}
 
 		aUsage, bUsage, err := getUsageData(cadvisorData)
 		if err != nil {
@@ -150,7 +159,6 @@ func pushData() {
 		fmt.Println(containerId, "push net info finished.")
 
 		// container num
-		containerLabels := cadvisorData.Labels
 		fmt.Println(containerId, "container labels", containerLabels)
 		if _, ok := containerLabels[config.DockerNotCountLabel]; !ok {
 			containerNum += 1
@@ -179,7 +187,7 @@ func getTag() string {
 
 func getUsageData(cadvisorData info.ContainerInfo) (ausge, busge *info.ContainerStats, err error) {
 	stats := cadvisorData.Stats
-	if len(stats) == 0 {
+	if len(stats) <= 2 {
 		fmt.Println("error: ", cadvisorData)
 		err = errors.New("error")
 		return
@@ -255,9 +263,9 @@ func pushCount(metric string, usageA, usageB uint64, timestamp, tags,
 
 func pushIt(value, timestamp, metric, tags, containerId, counterType,
 	endpoint string) error {
-
 	postThing := `[{"metric": "` + metric + `", "endpoint": "docker-` +
 		endpoint + `", "timestamp": ` + timestamp + `,"step": ` + fmt.Sprintf("%d", config.Interval) + `,"value": ` + value + `,"counterType": "` + counterType + `","tags": "` + tags + `"}]`
+	fmt.Println("post metric", postThing)
 	//push data to falcon-agent
 	url := fmt.Sprintf("http://127.0.0.1:%d/v1/push", config.OpenFalconPort)
 	resp, err := http.Post(url,
@@ -440,7 +448,7 @@ func main() {
 		Interval:            10,
 		OpenFalconPort:      1988,
 		CadvisorPort:        18080,
-		CadvisorHost:        "127.0.0.1",
+		CadvisorHost:        "172.24.6.82",
 		DockerSocket:        "unix:///var/run/docker.sock",
 		DockerNotCountLabel: "dcos-container",
 	}
