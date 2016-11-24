@@ -442,6 +442,7 @@ func pushNetwork(networkUsage1, networkUsage2 info.NetworkStats, timestamp, tags
 
 func main() {
 	configFile := flag.String("config_file", "cadvisor_collector_config.yaml", " config file path")
+	flag.String("version", "2016-11-24", "version")
 	flag.Parse()
 
 	config = Config{
