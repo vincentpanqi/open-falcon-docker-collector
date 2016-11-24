@@ -187,7 +187,7 @@ func getTag() string {
 
 func getUsageData(cadvisorData info.ContainerInfo) (ausge, busge *info.ContainerStats, err error) {
 	stats := cadvisorData.Stats
-	if len(stats) <= 2 {
+	if len(stats) < 2 {
 		fmt.Println("error: ", cadvisorData)
 		err = errors.New("error")
 		return
