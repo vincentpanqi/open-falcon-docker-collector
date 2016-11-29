@@ -23,6 +23,7 @@ var (
 	// CPUNum   int64
 	config       Config
 	dockerClient *docker.Client
+	hostMemory   uint64
 )
 
 type Config struct {
@@ -67,6 +68,42 @@ func getCadvisorData() ([]info.ContainerInfo, error) {
 	return cadvisorData, nil
 }
 
+func getSubcontainerDockerData(containerId string) (cadvisorData info.ContainerInfo, err error) {
+	url := fmt.Sprintf("http://%s:%d/", config.CadvisorHost, config.CadvisorPort)
+	client, err := client.NewClient(url)
+	if err != nil {
+		return
+	}
+	request := info.ContainerInfoRequest{NumStats: -1}
+	// cadvisorData, err = client.DockerContainer(containerId, &request)
+	_cadvisorData, err := client.SubcontainersInfo("/docker/"+containerId, &request)
+	if len(_cadvisorData) == 0 {
+		err = errors.New("no cadvisor data")
+		return
+	}
+	cadvisorData = _cadvisorData[0]
+	if err != nil {
+		return
+	}
+
+	return
+
+}
+
+func getHostMemoryTotal() (total uint64, err error) {
+	url := fmt.Sprintf("http://%s:%d/", config.CadvisorHost, config.CadvisorPort)
+	client, err := client.NewClient(url)
+	if err != nil {
+		return
+	}
+	info, err := client.MachineInfo()
+	if err != nil {
+		return
+	}
+	hostMemory = info.MemoryCapacity
+	return info.MemoryCapacity, err
+}
+
 func getDockerContainerInfo(containerId string) (ContainerInfo docker_types.ContainerJSON, err error) {
 	defaultHeaders := map[string]string{"User-Agent": "engine-api-cli-1.0"}
 	// client, err := docker.NewClient(config.DockerSocket, "v1.24", nil, defaultHeaders)
@@ -96,19 +133,27 @@ func pushData() {
 	fmt.Println("cadvisor data ", len(cadvisorDatas))
 	done := make(chan int, len(cadvisorDatas))
 	for i, cadvisorData := range cadvisorDatas {
+		if len(cadvisorData.Id) == 0 {
+			fmt.Println("no container id")
+			continue
+		}
+		cadvisorData, err = getSubcontainerDockerData(cadvisorData.Id)
+		if err != nil {
+			fmt.Println(cadvisorData.Id, "get container cadvisor failed.")
+			continue
+		}
 
 		go func(index int, cadvisorData info.ContainerInfo, done chan<- int) {
 
 			defer func() {
 				done <- index
 			}()
-			memLimit := cadvisorData.Spec.Memory.Limit
 			containerId := cadvisorData.Id
-			if len(containerId) == 0 {
-				fmt.Println("no container id")
-				// continue
-				return
+			memLimit := cadvisorData.Spec.Memory.Limit
+			if memLimit > hostMemory {
+				memLimit = hostMemory
 			}
+			fmt.Println(containerId, "mem", memLimit)
 			containerLabels := cadvisorData.Labels
 			var marathonId string
 			marathonId = containerLabels["dcos-marathon-id"]
@@ -253,6 +298,10 @@ func pushCPU(CPUUsage1, CPUUsage2 info.CpuStats, timestamp, tags,
 	}
 
 	for i, _ := range CPUUsage1.Usage.PerCpu {
+		if len(CPUUsage2.Usage.PerCpu) <= i {
+			fmt.Println(containerId, "cpu percent error", len(CPUUsage2.Usage.PerCpu), len(CPUUsage1.Usage.PerCpu))
+			break
+		}
 		usage := CPUUsage2.Usage.PerCpu[i] - CPUUsage1.Usage.PerCpu[i]
 		perCpuUsage := fmt.Sprintf("%f", float64(usage)/10000000)
 		if err := pushIt(perCpuUsage,
@@ -475,6 +524,11 @@ func main() {
 	}
 	config.LoadConfig(*configFile)
 	fmt.Println("config", config)
+	_, err := getHostMemoryTotal()
+	if err != nil {
+		fmt.Println("get host memory failed", err.Error())
+		return
+	}
 
 	Interval := time.Duration(config.Interval) * time.Second
 	t := time.NewTicker(Interval)
